@@ -32,3 +32,6 @@ uvicorn main:app --reload
 - Scoring at read time keeps the weights transparent and lets the salesperson tune the ICP live.
 - **Ethical data use**: the tool processes lists the user already has. It does not scrape sites that forbid it, and it stores no data beyond the uploaded file.
 - Limits: no live scraping, no CAPTCHA handling, no auth. Next steps: Postgres, Redis, MX checks, a CRM export (HubSpot), and a LLM-written one-line outreach opener per lead.
+
+
+Live demo: https://leadlens-xknc.onrender.com
