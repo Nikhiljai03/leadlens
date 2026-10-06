@@ -1,0 +1,55 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LeadLens</title>
+<link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f3f5f2;--ink:#18262b;--mute:#5f6f73;--line:#d9dfdb;--acc:#0b6b5f;--hi:#0b6b5f;--mid:#b7791f;--lo:#a33a3a;font-family:"Public Sans",system-ui,sans-serif}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink)}
+main{max-width:1100px;margin:0 auto;padding:28px 20px 60px}
+h1{font-size:28px;margin:0 0 4px}p.sub{margin:0 0 22px;color:var(--mute)}
+.bar{display:flex;flex-wrap:wrap;gap:12px;align-items:end;padding:14px 0;border-bottom:1px solid var(--line)}
+label{display:flex;flex-direction:column;font-size:13px;color:var(--mute);gap:4px}
+input{font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--ink)}
+button{font:inherit;font-weight:600;padding:9px 14px;border-radius:6px;border:1px solid var(--acc);background:var(--acc);color:#fff;cursor:pointer}
+button.ghost{background:#fff;color:var(--acc)}button:focus-visible,input:focus-visible{outline:3px solid #7cc4ba;outline-offset:1px}
+#stats{margin:14px 0;font-size:14px;color:var(--mute);min-height:20px}
+.wrap{overflow-x:auto;background:#fff;border:1px solid var(--line);border-radius:8px}
+table{border-collapse:collapse;width:100%;font-size:14px}th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:13px;color:var(--mute);font-weight:600}tr:last-child td{border-bottom:0}
+.score{display:inline-block;min-width:44px;text-align:center;font-weight:700;color:#fff;padding:4px 8px;border-radius:5px}
+.why{color:var(--mute);font-size:12.5px;margin-top:3px}.empty{padding:28px;text-align:center;color:var(--mute)}
+</style></head><body><main>
+<h1>LeadLens</h1><p class="sub">Upload a lead list. LeadLens removes duplicates, checks emails, and ranks every lead against your ideal customer.</p>
+<div class="bar">
+ <label>Lead list (CSV)<input type="file" id="file" accept=".csv"></label>
+ <button id="up">Upload leads</button><button class="ghost" id="sample">Load sample leads</button><button class="ghost" id="clear">Clear all</button>
+</div>
+<div class="bar">
+ <label>Target industries (comma separated)<input id="industries" placeholder="HVAC, Plumbing, Roofing"></label>
+ <label>Min employees<input id="min" type="number" value="10" style="width:100px"></label>
+ <label>Max employees<input id="max" type="number" value="250" style="width:100px"></label>
+ <label>Min score<input id="ms" type="number" value="0" style="width:90px"></label>
+ <label>Search<input id="q" placeholder="name, company..."></label>
+ <button id="export">Export ranked CSV</button>
+</div>
+<div id="stats" role="status"></div>
+<div class="wrap"><table><thead><tr><th>Score</th><th>Lead</th><th>Company</th><th>Email</th><th>Size</th></tr></thead><tbody id="rows"></tbody></table></div>
+</main><script>
+const $=id=>document.getElementById(id);
+const params=()=>new URLSearchParams({industries:$('industries').value,min_emp:$('min').value||0,max_emp:$('max').value||999999,min_score:$('ms').value||0,q:$('q').value});
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+async function load(){
+  const d=await (await fetch('/api/leads?'+params())).json();
+  $('rows').innerHTML=d.length?d.map(l=>`<tr><td><span class="score" style="background:${l.score>=70?'var(--hi)':l.score>=45?'var(--mid)':'var(--lo)'}">${l.score}</span></td>
+   <td><b>${esc(l.name)}</b><br>${esc(l.title)}<div class="why">${esc(l.reasons)}</div></td><td>${esc(l.company)}<br><span class="why">${esc(l.industry)} · ${esc(l.location)}</span></td>
+   <td>${esc(l.email)||'-'}<div class="why">${esc(l.email_status)}</div></td><td>${l.employees||'-'}</td></tr>`).join(''):
+   '<tr><td colspan="5" class="empty">No leads yet. Upload a CSV or load the sample leads.</td></tr>';
+}
+function show(s){$('stats').textContent=`Received ${s.received}, added ${s.added}, merged ${s.duplicates} duplicates, flagged ${s.bad_emails} bad emails.`;load()}
+$('up').onclick=async()=>{const f=$('file').files[0];if(!f){$('stats').textContent='Choose a CSV file first.';return}
+  const fd=new FormData();fd.append('file',f);show(await (await fetch('/api/upload',{method:'POST',body:fd})).json())};
+$('sample').onclick=async()=>show(await (await fetch('/api/sample',{method:'POST'})).json());
+$('clear').onclick=async()=>{await fetch('/api/leads',{method:'DELETE'});$('stats').textContent='All leads cleared.';load()};
+$('export').onclick=()=>location.href='/api/export?'+params();
+['industries','min','max','ms','q'].forEach(i=>$(i).addEventListener('input',()=>{clearTimeout(window.t);window.t=setTimeout(load,250)}));
+load();
+</script></body></html>
