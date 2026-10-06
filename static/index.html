@@ -1,55 +1,79 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<!doctype html><html lang="en" data-theme="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>LeadLens</title>
-<link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
-:root{--bg:#f3f5f2;--ink:#18262b;--mute:#5f6f73;--line:#d9dfdb;--acc:#0b6b5f;--hi:#0b6b5f;--mid:#b7791f;--lo:#a33a3a;font-family:"Public Sans",system-ui,sans-serif}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink)}
-main{max-width:1100px;margin:0 auto;padding:28px 20px 60px}
-h1{font-size:28px;margin:0 0 4px}p.sub{margin:0 0 22px;color:var(--mute)}
-.bar{display:flex;flex-wrap:wrap;gap:12px;align-items:end;padding:14px 0;border-bottom:1px solid var(--line)}
-label{display:flex;flex-direction:column;font-size:13px;color:var(--mute);gap:4px}
-input{font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--ink)}
-button{font:inherit;font-weight:600;padding:9px 14px;border-radius:6px;border:1px solid var(--acc);background:var(--acc);color:#fff;cursor:pointer}
-button.ghost{background:#fff;color:var(--acc)}button:focus-visible,input:focus-visible{outline:3px solid #7cc4ba;outline-offset:1px}
-#stats{margin:14px 0;font-size:14px;color:var(--mute);min-height:20px}
-.wrap{overflow-x:auto;background:#fff;border:1px solid var(--line);border-radius:8px}
-table{border-collapse:collapse;width:100%;font-size:14px}th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
-th{font-size:13px;color:var(--mute);font-weight:600}tr:last-child td{border-bottom:0}
-.score{display:inline-block;min-width:44px;text-align:center;font-weight:700;color:#fff;padding:4px 8px;border-radius:5px}
-.why{color:var(--mute);font-size:12.5px;margin-top:3px}.empty{padding:28px;text-align:center;color:var(--mute)}
-</style></head><body><main>
-<h1>LeadLens</h1><p class="sub">Upload a lead list. LeadLens removes duplicates, checks emails, and ranks every lead against your ideal customer.</p>
-<div class="bar">
- <label>Lead list (CSV)<input type="file" id="file" accept=".csv"></label>
- <button id="up">Upload leads</button><button class="ghost" id="sample">Load sample leads</button><button class="ghost" id="clear">Clear all</button>
-</div>
-<div class="bar">
- <label>Target industries (comma separated)<input id="industries" placeholder="HVAC, Plumbing, Roofing"></label>
- <label>Min employees<input id="min" type="number" value="10" style="width:100px"></label>
- <label>Max employees<input id="max" type="number" value="250" style="width:100px"></label>
- <label>Min score<input id="ms" type="number" value="0" style="width:90px"></label>
- <label>Search<input id="q" placeholder="name, company..."></label>
- <button id="export">Export ranked CSV</button>
-</div>
-<div id="stats" role="status"></div>
-<div class="wrap"><table><thead><tr><th>Score</th><th>Lead</th><th>Company</th><th>Email</th><th>Size</th></tr></thead><tbody id="rows"></tbody></table></div>
-</main><script>
-const $=id=>document.getElementById(id);
-const params=()=>new URLSearchParams({industries:$('industries').value,min_emp:$('min').value||0,max_emp:$('max').value||999999,min_score:$('ms').value||0,q:$('q').value});
+:root{--bg:#f4f6fa;--panel:#fff;--ink:#0f1f3d;--mute:#5b6781;--line:#e2e7f0;--acc:#2457d6;--acc-ink:#fff;--soft:#eaf0fd;--ok:#16794c;--okb:#e3f5ec;--warn:#9a5b00;--warnb:#fdf1dc;--bad:#b3261e;--badb:#fbe7e5;--side:#0f1f3d;font-family:"DM Sans",system-ui,sans-serif}
+[data-theme=dark]{--bg:#0d1424;--panel:#141d33;--ink:#e8edf8;--mute:#93a0bd;--line:#26314d;--acc:#6b93f5;--acc-ink:#0d1424;--soft:#1c2848;--ok:#5ad19a;--okb:#12362b;--warn:#f0b865;--warnb:#3a2c12;--bad:#f28b82;--badb:#3d1a18;--side:#0a101e}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-size:14px;display:flex;min-height:100vh}
+aside{width:220px;background:var(--side);color:#e8edf8;padding:22px 14px;flex-shrink:0}
+.brand{font-weight:700;font-size:19px;padding:0 10px 22px;display:flex;gap:9px;align-items:center}.brand i{width:22px;height:22px;border-radius:6px;background:var(--acc);display:inline-block}
+nav button{all:unset;display:block;width:100%;padding:10px;border-radius:7px;cursor:pointer;color:#b7c2dc;box-sizing:border-box;font-weight:500}
+nav button.on{background:#1d2c52;color:#fff}nav button:focus-visible,button:focus-visible,input:focus-visible{outline:3px solid #8fb0ff;outline-offset:2px}
+.side-note{margin:26px 10px 0;font-size:12.5px;color:#8f9cbb;line-height:1.5}
+main{flex:1;min-width:0;padding:24px 28px 50px}
+.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}h1{font-size:22px;margin:0}.sub{color:var(--mute);margin:3px 0 0}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
+.kpi,.card{background:var(--panel);border:1px solid var(--line);border-radius:10px}.kpi{padding:14px 16px}.kpi b{display:block;font-size:26px;margin-top:4px}.kpi span{color:var(--mute);font-size:13px}
+.tools{display:flex;flex-wrap:wrap;gap:10px;align-items:end;padding:14px;border-bottom:1px solid var(--line)}
+label{display:flex;flex-direction:column;gap:4px;color:var(--mute);font-size:12.5px;font-weight:500}
+input{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:7px;padding:8px 10px}
+.btn{font:inherit;font-weight:700;border-radius:7px;padding:9px 14px;cursor:pointer;border:1px solid var(--acc);background:var(--acc);color:var(--acc-ink)}
+.btn.sec{background:transparent;color:var(--acc)}.btn.sm{padding:5px 10px;font-size:12.5px}.btn:disabled{opacity:.55;cursor:wait}
+#msg{padding:10px 14px;color:var(--mute);min-height:38px;border-bottom:1px solid var(--line)}
+.tabs{display:flex;gap:4px;padding:10px 14px 0}.tabs button{all:unset;cursor:pointer;padding:8px 12px;border-radius:7px 7px 0 0;color:var(--mute);font-weight:500}.tabs button.on{color:var(--acc);box-shadow:inset 0 -2px var(--acc);font-weight:700}
+.wrap{overflow-x:auto}table{width:100%;border-collapse:collapse}th,td{padding:12px 14px;text-align:left;border-top:1px solid var(--line);vertical-align:top}
+th{font-size:12.5px;color:var(--mute);font-weight:500;background:var(--bg);border-top:0}.mute{color:var(--mute);font-size:12.5px;margin-top:3px}
+.pill{display:inline-block;padding:3px 9px;border-radius:99px;font-weight:700;font-size:12.5px;white-space:nowrap}
+.hot{background:var(--okb);color:var(--ok)}.warm{background:var(--warnb);color:var(--warn)}.cold{background:var(--badb);color:var(--bad)}.tag{background:var(--soft);color:var(--acc)}
+.empty{text-align:center;color:var(--mute);padding:34px}.acts{display:flex;gap:6px;flex-wrap:wrap}
+@media(max-width:820px){body{flex-direction:column}aside{width:100%;padding:12px}.side-note{display:none}nav{display:flex;gap:6px}nav button{width:auto}.kpis{grid-template-columns:1fr 1fr}main{padding:16px}}
+</style></head><body>
+<aside><div class="brand"><i></i>LeadLens</div>
+<nav><button class="on" data-tab="all">Leads</button><button data-tab="first">Enrich first</button></nav>
+<p class="side-note">Set your buy-box, see the best-fit owner-operated businesses first, then enrich only those.</p></aside>
+<main>
+<div class="top"><div><h1 id="title">Leads</h1><p class="sub">Rank acquisition targets against your buy-box, with a reason for every score.</p></div><button class="btn sec" id="theme">Dark mode</button></div>
+<section class="kpis" aria-label="Summary"><div class="kpi"><span>Total leads</span><b id="k1">0</b></div><div class="kpi"><span>Average score</span><b id="k2">0</b></div><div class="kpi"><span>Hot leads (70+)</span><b id="k3">0</b></div><div class="kpi"><span>Ready to enrich</span><b id="k4">0</b></div></section>
+<section class="card">
+<div class="tools"><label>Lead list (CSV)<input type="file" id="file" accept=".csv"></label><button class="btn" id="up">Upload leads</button><button class="btn sec" id="sample">Load sample leads</button><button class="btn sec" id="clear">Clear all</button></div>
+<div class="tools"><label>Buy-box industries<input id="industries" placeholder="HVAC, Plumbing, Roofing"></label><label>Min revenue ($M)<input id="min" type="number" step="0.5" value="1" style="width:110px"></label><label>Max revenue ($M)<input id="max" type="number" step="0.5" value="10" style="width:110px"></label><label>Region<input id="region" placeholder="TX, Denver"></label><label>Min score<input id="ms" type="number" value="0" style="width:90px"></label><label>Search<input id="q" placeholder="Name or company"></label><button class="btn sec" id="export">Export ranked CSV</button></div>
+<div id="msg" role="status"></div>
+<div class="tabs"><button class="on" data-tab="all">All leads</button><button data-tab="first">Enrich first</button></div>
+<div class="wrap"><table><thead><tr><th>Score</th><th>Lead</th><th>Company</th><th>Est. revenue</th><th>Email</th><th>Actions</th></tr></thead><tbody id="rows"></tbody></table></div>
+</section></main>
+<script>
+const $=id=>document.getElementById(id);let tab='all',data=[];
+const P=()=>new URLSearchParams({industries:$('industries').value,min_rev:$('min').value||0,max_rev:$('max').value||9999,region:$('region').value,min_score:$('ms').value||0,q:$('q').value});
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-async function load(){
-  const d=await (await fetch('/api/leads?'+params())).json();
-  $('rows').innerHTML=d.length?d.map(l=>`<tr><td><span class="score" style="background:${l.score>=70?'var(--hi)':l.score>=45?'var(--mid)':'var(--lo)'}">${l.score}</span></td>
-   <td><b>${esc(l.name)}</b><br>${esc(l.title)}<div class="why">${esc(l.reasons)}</div></td><td>${esc(l.company)}<br><span class="why">${esc(l.industry)} · ${esc(l.location)}</span></td>
-   <td>${esc(l.email)||'-'}<div class="why">${esc(l.email_status)}</div></td><td>${l.employees||'-'}</td></tr>`).join(''):
-   '<tr><td colspan="5" class="empty">No leads yet. Upload a CSV or load the sample leads.</td></tr>';
+const money=n=>n?'$'+(n>=1e6?(n/1e6).toFixed(1)+'M':Math.round(n/1e3)+'K'):'-';
+const tier=s=>s>=70?['hot','Hot']:s>=45?['warm','Warm']:['cold','Cold'];
+const say=t=>$('msg').textContent=t;
+function draw(){
+  const all=data,first=all.filter(l=>l.enrich_first),list=tab==='first'?first:all;
+  $('k1').textContent=all.length;$('k2').textContent=all.length?Math.round(all.reduce((a,l)=>a+l.score,0)/all.length):0;
+  $('k3').textContent=all.filter(l=>l.score>=70).length;$('k4').textContent=first.length;
+  $('rows').innerHTML=list.length?list.map(l=>{const[t,n]=tier(l.score);return `<tr><td><span class="pill ${t}">${n} ${l.score}</span></td>
+  <td><b>${esc(l.name)}</b><div class="mute">${esc(l.title)}</div><div class="mute">${esc(l.reasons)}</div></td>
+  <td>${esc(l.company)} ${l.enrich_first?'<span class="pill tag">Enrich first</span>':''}<div class="mute">${esc(l.industry)} · ${esc(l.location)} · ${l.employees||'-'} staff</div>
+   ${l.enriched?`<div class="mute"><b>Website:</b> ${esc(l.web_desc||l.web_title||'Found')}</div>`:''}</td>
+  <td>${money(l.est_revenue)}</td><td>${esc(l.email)||'-'}<div class="mute">${esc(l.email_status)}</div></td>
+  <td><div class="acts"><button class="btn sm" data-enrich="${l.id}" ${l.enriched?'disabled':''}>${l.enriched?'Enriched':'Enrich'}</button><button class="btn sm sec" data-copy="${l.id}">Copy opener</button></div></td></tr>`}).join(''):
+  `<tr><td colspan="6" class="empty">${all.length?'No leads match these filters.':'No leads yet. Upload a CSV or load the sample leads.'}</td></tr>`;
 }
-function show(s){$('stats').textContent=`Received ${s.received}, added ${s.added}, merged ${s.duplicates} duplicates, flagged ${s.bad_emails} bad emails.`;load()}
-$('up').onclick=async()=>{const f=$('file').files[0];if(!f){$('stats').textContent='Choose a CSV file first.';return}
-  const fd=new FormData();fd.append('file',f);show(await (await fetch('/api/upload',{method:'POST',body:fd})).json())};
-$('sample').onclick=async()=>show(await (await fetch('/api/sample',{method:'POST'})).json());
-$('clear').onclick=async()=>{await fetch('/api/leads',{method:'DELETE'});$('stats').textContent='All leads cleared.';load()};
-$('export').onclick=()=>location.href='/api/export?'+params();
-['industries','min','max','ms','q'].forEach(i=>$(i).addEventListener('input',()=>{clearTimeout(window.t);window.t=setTimeout(load,250)}));
+async function load(){data=await (await fetch('/api/leads?'+P())).json();draw()}
+function done(s){say(`Received ${s.received}, added ${s.added}, merged ${s.duplicates} duplicates, flagged ${s.bad_emails} bad emails.`);load()}
+$('up').onclick=async()=>{const f=$('file').files[0];if(!f)return say('Choose a CSV file first.');const fd=new FormData();fd.append('file',f);done(await (await fetch('/api/upload',{method:'POST',body:fd})).json())};
+$('sample').onclick=async()=>done(await (await fetch('/api/sample',{method:'POST'})).json());
+$('clear').onclick=async()=>{await fetch('/api/leads',{method:'DELETE'});say('All leads cleared.');load()};
+$('export').onclick=()=>location.href='/api/export?'+P();
+$('rows').onclick=async e=>{const b=e.target;
+  if(b.dataset.enrich){b.disabled=true;b.textContent='Enriching...';const r=await fetch('/api/enrich/'+b.dataset.enrich,{method:'POST'});
+    if(r.ok)say('Website details added.');else say((await r.json()).detail||'Enrichment failed.');load()}
+  if(b.dataset.copy){const l=data.find(x=>x.id==b.dataset.copy);try{await navigator.clipboard.writeText(l.opener);say('Opener copied.')}catch{say(l.opener)}}};
+document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{tab=b.dataset.tab;document.querySelectorAll('[data-tab]').forEach(x=>x.classList.toggle('on',x.dataset.tab===tab));$('title').textContent=tab==='first'?'Enrich first':'Leads';draw()});
+['industries','min','max','ms','q','region'].forEach(i=>$(i).addEventListener('input',()=>{clearTimeout(window.t);window.t=setTimeout(load,250)}));
+const setTheme=t=>{document.documentElement.dataset.theme=t;$('theme').textContent=t==='dark'?'Light mode':'Dark mode';try{localStorage.setItem('ll-theme',t)}catch{}};
+$('theme').onclick=()=>setTheme(document.documentElement.dataset.theme==='dark'?'light':'dark');
+try{setTheme(localStorage.getItem('ll-theme')||'light')}catch{}
 load();
 </script></body></html>

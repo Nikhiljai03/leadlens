@@ -1,8 +1,8 @@
 """LeadLens - lead cleaning, dedupe, validation and ICP scoring API."""
-import csv, io, os, re, sqlite3
+import csv, io, ipaddress, os, re, socket, sqlite3, urllib.request, urllib.robotparser
 from difflib import SequenceMatcher
 from functools import lru_cache
-from fastapi import FastAPI, File, UploadFile
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -28,7 +28,11 @@ def conn():
     c = sqlite3.connect(DB)
     c.row_factory = sqlite3.Row
     c.execute("""CREATE TABLE IF NOT EXISTS leads(id INTEGER PRIMARY KEY, name, title, company,
-                 email, industry, employees INTEGER, location, domain, email_status)""")
+                 email, industry, employees INTEGER, location, domain, email_status,
+                 web_title, web_desc, enriched INTEGER DEFAULT 0)""")
+    for col in ("web_title", "web_desc", "enriched INTEGER DEFAULT 0"):  # upgrade older DB files
+        try: c.execute(f"ALTER TABLE leads ADD COLUMN {col}")
+        except sqlite3.OperationalError: pass
     return c
 
 
@@ -38,6 +42,57 @@ def email_status(email: str) -> str:
     if not EMAIL_RE.match(email): return "invalid"
     d = email.split("@")[1]
     return "disposable" if d in DISPOSABLE else "free" if d in FREE else "corporate"
+
+
+REV_PER_EMP = {"hvac": 140000, "plumbing": 130000, "roofing": 150000, "logistics": 180000, "healthcare": 160000,
+               "software": 220000, "manufacturing": 200000, "accounting": 120000, "automotive": 170000, "landscaping": 90000}
+
+
+def est_revenue(l):  # rough revenue-per-employee heuristic, used only to rank who to enrich first
+    return l["employees"] * REV_PER_EMP.get((l["industry"] or "").lower(), 150000)
+
+
+def opener(l):
+    first = (l["name"] or "there").split()[0]
+    ctx = re.split(r"[.|-]", l.get("web_desc") or "")[0].strip()[:90]
+    hook = f" ({ctx})" if ctx else f" and noticed it serves the {l['industry']} space" if l["industry"] else ""
+    return f"Hi {first}, I came across {l['company']}{hook}. Open to a quick 10-minute call about [your offer]?"
+
+
+def safe_host(d):  # block private/loopback targets so enrichment cannot be pointed at internal services
+    try:
+        ip = ipaddress.ip_address(socket.gethostbyname(d))
+        return not (ip.is_private or ip.is_loopback or ip.is_link_local)
+    except Exception: return False
+
+
+def _get(url):
+    req = urllib.request.Request(url, headers={"User-Agent": "LeadLensBot/1.0"})
+    return urllib.request.urlopen(req, timeout=5).read(200_000).decode("utf-8", "ignore")
+
+
+@lru_cache(maxsize=1024)
+def has_mx(domain):
+    try:
+        import dns.resolver
+        dns.resolver.resolve(domain, "MX", lifetime=3); return True
+    except ImportError: return True
+    except Exception: return False
+
+
+@lru_cache(maxsize=1024)  # one fetch per domain, politely: robots.txt first, 5s timeout, public homepage only
+def fetch_site(domain):
+    if not safe_host(domain): return {"error": "Website not reachable"}
+    base, rp = f"https://{domain}", urllib.robotparser.RobotFileParser()
+    try: rp.parse(_get(base + "/robots.txt").splitlines())
+    except Exception: pass
+    if not rp.can_fetch("LeadLensBot", base): return {"error": "Site blocks automated access (robots.txt)"}
+    try: html = _get(base)
+    except Exception: return {"error": "Website not reachable"}
+    t = re.search(r"<title[^>]*>(.*?)</title>", html, re.I | re.S)
+    d = re.search(r'<meta[^>]+name=["\']description["\'][^>]+content=["\'](.*?)["\']', html, re.I | re.S)
+    clean = lambda m: re.sub(r"\s+", " ", m.group(1)).strip()[:200] if m else ""
+    return {"title": clean(t), "desc": clean(d)}
 
 
 def norm(s): return re.sub(r"[^a-z0-9 ]", "", (s or "").lower()).strip()
@@ -80,29 +135,34 @@ def score(l, industries, lo, hi):
     pts, why = 0, []
     t = (l["title"] or "").lower()
     s = next((p for rx, p in SENIORITY if re.search(rx, t)), 0)
-    pts += s; why.append(f"decision-maker +{s}" if s >= 20 else "junior/unclear title +0" if not s else f"manager +{s}")
+    pts += s; why.append(f"{'owner/founder' if s == 30 else 'decision-maker'} +{s}" if s >= 20 else "junior/unclear title +0" if not s else f"manager +{s}")
     if industries:
         hit = any(i in (l["industry"] or "").lower() for i in industries)
         pts += 25 if hit else 0; why.append("industry fit +25" if hit else "off-target industry")
     else: pts += 12
-    n = l["employees"]
-    if lo <= n <= hi: pts += 20; why.append("size in range +20")
-    elif n: why.append("size out of range")
+    r = est_revenue(l) / 1e6
+    if lo <= r <= hi: pts += 20; why.append(f"est. revenue ${r:.1f}M inside buy-box +20")
+    elif r: why.append(f"est. revenue ${r:.1f}M outside buy-box")
     q = {"corporate": 15, "free": 6}.get(l["email_status"], 0)
     pts += q; why.append(f"email {l['email_status']} +{q}")
     pts += 10 if all(l[f] for f in FIELDS) else 5 if l["company"] and l["name"] else 0
     return min(pts, 100), "; ".join(why)
 
 
-def query(industries="", min_emp=10, max_emp=250, min_score=0, q=""):
+def query(industries="", min_rev=1.0, max_rev=10.0, min_score=0, q="", ids=None, region=""):
     inds = [i.strip().lower() for i in industries.split(",") if i.strip()]
     out = []
     for r in conn().execute("SELECT * FROM leads"):
         l = dict(r)
-        l["score"], l["reasons"] = score(l, inds, min_emp, max_emp)
+        if region and region.lower() not in (l["location"] or "").lower(): continue
+        l["score"], l["reasons"] = score(l, inds, min_rev, max_rev)
+        l["est_revenue"], l["opener"], l["enrich_first"] = est_revenue(l), opener(l), False
         hay = " ".join(str(v) for v in l.values()).lower()
         if l["score"] >= min_score and q.lower() in hay: out.append(l)
-    return sorted(out, key=lambda x: -x["score"])
+    out.sort(key=lambda x: (-x["score"], -x["est_revenue"]))
+    todo = [x for x in out if not x["enriched"] and x["email_status"] == "corporate" and x["score"] >= 60][:5]
+    for x in todo: x["enrich_first"] = True  # spend enrichment credits on these first
+    return out
 
 
 @app.get("/")
@@ -121,17 +181,34 @@ def sample():
 
 
 @app.get("/api/leads")
-def leads(industries: str = "", min_emp: int = 10, max_emp: int = 250, min_score: int = 0, q: str = ""):
-    return query(industries, min_emp, max_emp, min_score, q)
+def leads(industries: str = "", min_rev: float = 1, max_rev: float = 10, region: str = "", min_score: int = 0, q: str = ""):
+    return query(industries, min_rev, max_rev, min_score, q, region=region)
 
 
 @app.get("/api/export")
-def export(industries: str = "", min_emp: int = 10, max_emp: int = 250, min_score: int = 0, q: str = ""):
+def export(industries: str = "", min_rev: float = 1, max_rev: float = 10, region: str = "", min_score: int = 0, q: str = ""):
     buf = io.StringIO()
-    w = csv.DictWriter(buf, FIELDS + ["score", "reasons", "email_status"], extrasaction="ignore")
-    w.writeheader(); w.writerows(query(industries, min_emp, max_emp, min_score, q))
+    w = csv.DictWriter(buf, FIELDS + ["score", "est_revenue", "reasons", "email_status", "web_title", "web_desc", "opener"], extrasaction="ignore")
+    w.writeheader(); w.writerows(query(industries, min_rev, max_rev, min_score, q, region=region))
     return StreamingResponse(iter([buf.getvalue()]), media_type="text/csv",
                              headers={"Content-Disposition": "attachment; filename=leads_ranked.csv"})
+
+
+@app.post("/api/enrich/{lead_id}")
+def enrich(lead_id: int):
+    c = conn()
+    row = c.execute("SELECT * FROM leads WHERE id=?", (lead_id,)).fetchone()
+    if not row: raise HTTPException(404, "Lead not found")
+    if not row["domain"] or row["domain"] in FREE | DISPOSABLE:
+        raise HTTPException(400, "Needs a company email domain to enrich")
+    site = fetch_site(row["domain"])
+    status = row["email_status"] if has_mx(row["domain"]) else "no_mx"
+    if "error" in site:
+        c.execute("UPDATE leads SET email_status=? WHERE id=?", (status, lead_id)); c.commit()
+        raise HTTPException(422, site["error"])
+    c.execute("UPDATE leads SET web_title=?, web_desc=?, enriched=1, email_status=? WHERE id=?",
+              (site["title"], site["desc"], status, lead_id)); c.commit()
+    return next(x for x in query() if x["id"] == lead_id)
 
 
 @app.delete("/api/leads")
